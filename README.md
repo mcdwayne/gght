@@ -93,12 +93,15 @@ xx.xxx.xx.xxx
 ### FAQ
 
 1. Who asked these questions?
-Dwayne make this all up
+
+Dwayne made this all up
 
 2. Why Bash?
+
 It is universal and a glue that makes all open source play "well" together. If you can dream it, you can script it. 
 
 3. Why not Python?
+
 Python is great and all, but the simplicity of working in Bash just appeals to me. Sure, some of the JSON handling might be much easier to pull off in Python, and if I was building production scripts that relied on queried responses for high throughput transactions I might consider it, but I would still likely want to use Bash. 
 
 This is intended to be for people who live in the command line and see all apps via their APIs and CLIs.  
@@ -106,7 +109,7 @@ This is intended to be for people who live in the command line and see all apps 
 
 ```
 ## Help menu
- gght - the GitGuardian Honeytoken CLI nobody asked for!
+ gght - the GitGuardian Honeytoken CLI to explore and learn the API
 
   usage: gght command <arg1> <arg2> <"message in double quotes">
   example: gght note delete 114 421 
