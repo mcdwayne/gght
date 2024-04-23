@@ -1,0 +1,556 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+##########
+# These need manually set for now. 
+# Assumes you make a local env variable using your GitGuardian auth token called TOKENGG
+
+BASE_URL="https://api.gitguardian.com"
+AUTH_HEADER="Authorization: Token "$TOKENGG
+
+
+######
+### Utility to check option is not 0 -default
+
+check_opt () {
+if [ $1 == 0 ]; then
+echo 'must provide valid parameters'
+echo "$HELP_MESSAGE"
+exit
+fi
+} 
+
+############################################
+#Health check
+health_check(){
+curl -s -H "${AUTH_HEADER}" ${BASE_URL}/v1/health | jq '. | .detail'
+}
+
+############################################
+###############
+# Honeytokens
+# List honeytokens
+
+list_all_honeytokens () {
+FILTERS="?"
+ARGUMENTS=()
+  for arg in $*
+  do
+  ARGUMENTS+=("$arg")
+  done
+for ((i=1;i<$#;i++));
+do
+    case ${ARGUMENTS[$i]} in
+      -p|--per_page)
+       TMP_FILTER="per_page="${ARGUMENTS[$i+1]}"&" 
+       FILTERS+=$TMP_FILTER 
+       ;;
+
+      -s|--status) 
+      TMP_FILTER="status="${ARGUMENTS[$i+1]}"&"  
+       FILTERS+=$TMP_FILTER 
+       ;;
+
+      -o|--ordering) 
+       case "${ARGUMENTS[$i+1]}" in
+        c)
+        TMP_FILTER="ordering=created_at&"
+        ;;
+        -|-c)
+        TMP_FILTER="ordering=-created_at&"  
+        ;;
+        t)
+        TMP_FILTER="ordering=triggered_at&"   
+        ;;
+        -t)
+        TMP_FILTER="ordering=-triggered_at&"   
+        ;;
+        r)
+        TMP_FILTER="ordering=revoked_at&"   
+        ;;
+        -r)
+        TMP_FILTER="ordering=-revoked_at&"   
+        ;;
+        *)
+        TMP_FILTER="ordering="${ARGUMENTS[$i+1]}"&" 
+       esac
+       
+       FILTERS+=$TMP_FILTER 
+       ;;
+      
+      -st|--show_token) 
+      TMP_FILTER="show_token="${ARGUMENTS[$i+1]:-true}"&"  
+       FILTERS+=$TMP_FILTER
+       ;;
+
+      last)
+        TMP_FILTER="?ordering=-created_at&per_page=1&status=triggered"
+        FILTERS=$TMP_FILTER
+        ;;
+
+      labels)
+        TMP_FILTER="?show_lables=true&" 
+        FILTERS=$TMP_FILTER
+        echo $FILTERS
+        ;;  
+      search|--search|-search) 
+      TMP_FILTER="search="${ARGUMENTS[$i+1]}"&"  
+       FILTERS+=$TMP_FILTER
+       ;;
+    esac
+done
+
+# echo "Applied filters = " ${FILTERS}
+URL_P="${BASE_URL}/v1/honeytokens"$FILTERS
+ALL_HONEYTOKENS=$(curl -s -H "${AUTH_HEADER}" "${URL_P}" | jq '.') 
+
+echo "Total Honeytokens retrieved (20 default max/100 possible max) = " $(echo "$ALL_HONEYTOKENS" | jq length)
+echo ""
+echo "$ALL_HONEYTOKENS" | jq '.'
+}
+
+############################################
+## Get a honeytoken by id
+
+retrieve_honeytoken_by_id () {
+check_opt $1
+HT_ID=$1    
+URL_P="${BASE_URL}/v1/honeytokens/"$HT_ID
+# echo $URL_P
+curl -s -H "${AUTH_HEADER}" "${URL_P}" | jq '.'
+# echo "$GOT_HONEYTOKEN" | jq '.'
+}
+
+############################################
+## Revoke a honeytoken
+##
+
+revoke_honeytoken () {
+check_opt $1
+HT_ID=$1    
+if [[ -z $HT_ID ]]; then
+echo "You did not specify a valid honeytoken ID"
+exit 
+fi
+URL_P="${BASE_URL}/v1/honeytokens/"$HT_ID"/revoke"
+# echo $URL_P
+curl -s -X POST -H "${AUTH_HEADER}" -d {"name":"dwayne-test-api"} "${URL_P}" | jq '.'
+# echo "$GOT_HONEYTOKEN" | jq '.'
+}
+
+############################################
+## Reset Honeytokens
+##
+
+reset_honeytoken () {
+check_opt $1
+HT_ID=$1    
+if [[ -z $HT_ID ]]; then
+echo "You did not specify a valid honeytoken ID"
+exit 
+fi
+URL_P="${BASE_URL}/v1/honeytokens/"$HT_ID"/reset"
+curl -s -X POST -H "${AUTH_HEADER}" -d {"name":"dwayne-test-api"} "${URL_P}" | jq '.'
+}
+
+############################################
+## Create honeytokens
+##
+
+create_honeytoken () {
+check_opt $1
+NAME=$1  
+if [[ $NAME == 0 ]]; then
+  echo 'Name is needed'
+  exit
+fi
+if [[ $2 == 0 ]]; then
+DATA="{\"name\":\"${NAME}\", \"type\":\"AWS\"}"
+else
+DATA="{\"name\":\"${NAME}\", \"type\":\"AWS\",\"description\":\"$2\"}"
+fi
+URL_P="${BASE_URL}/v1/honeytokens"
+curl -s -X POST -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}"  | jq '.'
+
+}
+
+############################################
+## Edit Honeytokens
+##
+edit_honeytoken () {
+check_opt $1
+URL_P="${BASE_URL}/v1/honeytokens/"$1
+DATA="{\"name\":\"$2\", \"description\":\"$3\"}"
+curl -s -X PATCH -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+}
+
+edit_honeytoken_name () {
+check_opt $1
+URL_P="${BASE_URL}/v1/honeytokens/"$1
+DATA="{\"name\":\"$2\"}"
+curl -s -X PATCH -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+}
+
+############################################
+## Edit Honeytokens
+## 
+edit_honeytoken_description () {
+check_opt $1
+URL_P="${BASE_URL}/v1/honeytokens/"$1
+DATA="{\"description\":\"$2\"}"
+curl -s -X PATCH -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+}
+
+############################################
+## Get Honeytoken Events
+
+get_honeytoken_events () {
+check_opt $1
+FILTERS="?"
+ARGUMENTS=()
+  for arg in $*
+  do
+  # echo $arg
+  ARGUMENTS+=("$arg")
+  done
+for ((i=1;i<$#;i++));
+do
+    case ${ARGUMENTS[$i]} in
+      -p|--per_page)
+       TMP_FILTER="per_page="${ARGUMENTS[$i+1]}"&" 
+       FILTERS+=$TMP_FILTER 
+       ;;
+
+      -s|--status) 
+      TMP_FILTER="status="${ARGUMENTS[$i+1]}"&"  
+       FILTERS+=$TMP_FILTER 
+       ;;
+
+      -o|--ordering) 
+       case ${ARGUMENTS[$i+1]} in
+        t)
+        TMP_FILTER="ordering=triggered_at&"   
+        ;;
+        -t|-)
+        TMP_FILTER="ordering=-triggered_at&"   
+        ;;
+        *)
+        TMP_FILTER="ordering="${ARGUMENTS[$i+1]}"&" 
+       esac
+       FILTERS+=$TMP_FILTER 
+       ;;
+
+      -ip|--ip_address)
+      TMP_FILTER="ip_address="${ARGUMENTS[$i+1]}"&"  
+       FILTERS+=$TMP_FILTER 
+       ;;
+      
+      search|--search|-search) 
+      TMP_FILTER="search="${ARGUMENTS[$i+1]}"&"  
+       FILTERS+=$TMP_FILTER
+       ;;
+
+      last) 
+      TMP_FILTER="?per_page=1&ordering=-triggered_at&status=open"  
+      FILTERS=$TMP_FILTER
+       ;;
+    esac
+done
+# echo "Applied filters = " ${FILTERS}
+URL_P="${BASE_URL}/v1/honeytokens_events${FILTERS}"
+
+GOT_EVENTS=$(curl -s -H "${AUTH_HEADER}" "${URL_P}" | jq '.') 
+
+echo "Total events retrieved (20 default max/100 possible max) = " $(echo "$GOT_EVENTS" | jq length)
+echo ""
+echo "$GOT_EVENTS" | jq '.'
+}
+
+
+############################################
+## notes
+## List Honeytoken Notes
+##
+list_notes () {
+check_opt $1
+if [ -z "$1" ] ; then
+echo "You must supply the honeytoken ID to list notes"
+exit
+fi
+HT_ID=$1    
+URL_P="${BASE_URL}/v1/honeytokens/$HT_ID/notes"
+curl -s -H "${AUTH_HEADER}" "${URL_P}" | jq '.'
+}
+
+############################################
+## Create Honeytoken Notes
+##
+create_note () {
+check_opt $1
+if [ -z "$1" ] || [ -z "$2" ]; then
+echo "You must supply the honeytoken ID and a new message to create a note"
+exit
+fi
+URL_P="${BASE_URL}/v1/honeytokens/"$1"/notes"
+DATA="{\"comment\":\"$2\"}"
+curl -s -X POST -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+}
+
+############################################
+## Update Honeytoken Notes
+##
+
+update_note () {
+check_opt $1
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+echo "You must supply the honeytoken ID, note ID, and a new message to update"
+exit
+fi
+
+URL_P="${BASE_URL}/v1/honeytokens/"$1"/notes/"$2
+DATA="{\"comment\":\"$3\"}"
+curl -s -X PATCH -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+}
+
+############################################
+## Delete Honeytoken Notes
+##
+
+delete_note () {
+check_opt $1
+if [ -z "$1" ] || [ -z "$2" ]; then
+echo "You must supply the honeytoken ID and the note ID"
+exit
+fi
+
+URL_P="${BASE_URL}/v1/honeytokens/"$1"/notes/"$2
+curl -s -X DELETE PATCH -H "${AUTH_HEADER}" -H "Content-Type: application/json" -d "${DATA}" "${URL_P}" | jq '.'
+echo "note deleted"
+}
+
+
+############################################
+## test
+## Trigger a Honeytoken
+trigger_honeytoken () {
+check_opt $1
+URL_P="${BASE_URL}/v1/honeytokens/"$1"?show_token=true"
+HT_RESPONSE=$(curl -s -H "${AUTH_HEADER}" -H "Content-type: application/json" "${URL_P}" | jq -r '.token')
+AWS_ACCESS_KEY_ID_VALUE=$(echo $HT_RESPONSE | jq -r '.access_token_id')
+AWS_SECRET_ACCESS_KEY_VALUE=$(echo $HT_RESPONSE | jq -r '.secret_key')
+export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_VALUE
+export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_VALUE
+
+echo ""
+echo "expected outcome: An error occurred (AccessDenied) when calling the ListBuckets operation: Access Denied"
+echo "note: it can take several minutes for the trigger to appear in the GitGuardian Dashboard"
+echo "Output: "
+aws s3 ls
+}
+
+############################################
+## Default Help Message 
+## Making it as a var here for portability
+##
+
+
+HELP_MESSAGE='
+  gght - the GitGuardian Honeytoken CLI for experimenting and learning!
+
+  usage: gght command <arg1> <arg2> <"message in double quotes">
+  example: gght note delete 114 421 
+
+  Commands:
+    health - check the API endpoint with your personal access token
+    list | -l -  list all the honeytokens of your workspace 
+          -p|--per_page 
+          -s|--status
+          -o|--ordering
+          -st|--show_token true
+          search            
+    retrieve | get - retrieve an existing honeytoken - requires: <honeytoken-id>
+    create - create a honeytoken of a type - requires: <name>, (optional): <"description">
+    reset - resets a triggered honeytoken - requires: <honeytoken-id>
+    revoke - revokes an active or triggered honeytoken. All the associated events will be closed - requires: <honeytoken-id>
+    test - trigger a honeytoken using aws s3 ls - requires: <honeytoken-id>
+    edit -
+       name - edit a honeytoken name - requires: <honeytoken-id> <"new name">
+       description - edit a honeytoken description - requires: <honeytoken-id> <"new description">
+       both - edit both a honeytoken name and description- requires: <honeytoken-id> <"new name"> <"new description">
+       Example use: gght edit both 114 "New Name" "New Desciption"
+    
+    events - list events related to all honeytokens of the workspace
+
+    note - 
+      list - List notes left on a honeytoken in chronological order - requires: <honeytoken-id>
+      create - add a note on a honeytoken - requires: <honeytoken-id> <"comment">
+      update - update a note on a honeytoken - requires: <honeytoken-id> <note-id> <"comment">
+      delete - deletes a note from a honeytoken - requires: <honeytoken-id> <note-id>
+      Eample use: gght note update 114 421 "New comment goes here"
+
+  Contact: dwayne.mcdaniel@gitguardian.com if you have questions
+    
+'
+  
+
+#######################################
+# ## gght commands
+##########################################
+
+case "${1:-default}" in
+ health)
+    health_check ;;
+  
+  list|-l)
+    case "${2:-default}" in
+      default)
+      ARGS=("list" "-o" "-created_at" )
+      list_all_honeytokens ${ARGS[@]}
+      ;;
+
+      -h|--help)
+        echo '
+          Your options for list are: 
+          -p|--per_page 
+              must supply a number between 1 and 100
+          
+          -s|--status
+              must supply a value of one of these:
+                  triggered 
+                  active 
+                  revoked
+          -o|--ordering
+              must supply a value of one of these:
+                c | created_at
+                -c | -created_at | -  (I use this one the most `gght -l -o -`)
+                t | triggered_at
+                -t| -triggered_at
+                r | revoked_at 
+                -r | -revoked_at
+             (note `-` = desencing "-created_at" shows newest first)
+
+          -st|--show_token) 
+              false by default 
+              must supply true to show AWS honeytokens in results
+          
+          search)
+            must supply a search term 
+            Currently limited to single word string
+        '
+      ;;  
+      *)
+    list_all_honeytokens $@ ;;
+    esac ;;         
+
+  last)
+    gght list last
+    gght event last
+    LAST_EVENT=$()
+    LAST_IP=$(gght event last | grep 'ip' | cut -d'"' -f 4 )
+    echo "${LAST_IP}"
+    whois "$LAST_IP"
+    ;;
+
+  retrieve|get)  
+    retrieve_honeytoken_by_id ${2:-0} ;;
+  
+  edit)
+      case "${2:-default}" in
+        name|-n)
+          edit_honeytoken_name ${3:-0} "${4:-0}" ;;
+  
+        description|-d) 
+          edit_honeytoken_description ${3:-0} "${4:-0}" ;;
+
+        both)
+        edit_honeytoken "${3:-0}" "${4:-0}" ""${5:-0}"" ;;
+
+        *)
+          echo 'You can only edit the name or description' ;;
+      esac ;;
+
+  create) 
+    create_honeytoken ${2:-0} "${3:-0}" ;;  
+  
+  reset)
+    reset_honeytoken ${2:-0} ;;
+
+  revoke) 
+  
+    revoke_honeytoken ${2:-0} ;;
+
+  test|trigger)
+    trigger_honeytoken ${2:-0} ;;
+
+  events|event|-e)
+    case "${2:-default}" in
+      default)
+      ARGS=("order" "-o" "-triggered_at" )
+      get_honeytoken_events ${ARGS[@]}
+      ;;
+      -h|--help)
+        echo '
+          Your options for list are: 
+          -p|--per_page 
+              must supply a number between 1 and 100
+          
+          -s|--status
+              must supply a value of one of these:
+                 open
+                 closed
+
+          -ip|--ip_address
+              Filter bby IP addredd 
+              Example: 8.8.8.8
+
+          -o|--ordering|order
+              must supply a value of one of these:
+                triggered_at | t
+                -triggered_at | -t | -
+             (note `-` = desending "-triggered_at" shows newest first)
+
+          search
+            must supply a search term 
+            Currently limited to single word string
+        '
+      ;;  
+      *)
+    get_honeytoken_events $@ ;;
+    esac ;;     
+
+  note)
+    case "${2:-default}" in
+     list) 
+      list_notes ${3:-0} ;;
+
+     create)
+      create_note ${3:-0} "${4:-0}" ;;
+
+     update)
+       update_note ${3:-0} ${4:-0} "${5:-0}" ;;
+
+     delete)   
+      delete_note ${3:-0} "${4:-0}" ;;
+
+     *) 
+      echo "You can list, create, update or delete notes"
+      echo "example: gght notes update <honeytoken-id> <note-id> <\"message for the note\">"
+    esac ;; 
+
+  whois)
+  IP_LIST=$(gght events list -p 100 -o -triggered_at | grep -w "ip_address" | sort | uniq -c | sort -r | cut -d'"' -f 4 )    
+  for ip in "$IP_LIST";
+  do
+    echo $ip
+    whois $ip | grep 'Organization\|Country'
+    echo "---------------------------------"
+  done
+  ;;
+
+ *)
+  echo "$HELP_MESSAGE" ;;
+esac
+
+### Thanks for reading the code :) 
+### Made with love by dwayne.mcdaniel@gitguardian.com
+
